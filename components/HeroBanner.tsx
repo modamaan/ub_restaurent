@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { RESTAURANT_CONFIG } from "@/lib/config";
 
 export default function HeroBanner({ banners }: { banners?: (string | null)[] }) {
     const [current, setCurrent] = useState(0);
@@ -74,10 +75,10 @@ export default function HeroBanner({ banners }: { banners?: (string | null)[] })
 
                 {/* Info row — stacks on tiny screens */}
                 <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] sm:text-[13px] text-white/70 mt-1">
-                    <span>📍 Kunnamkulam, Kerala</span>
+                    <span>📍 {RESTAURANT_CONFIG.address}</span>
                     <span className="hidden sm:inline">·</span>
-                    <span>🕐 10:00 AM – 10:00 PM</span>
-                    <a href="https://wa.me/917025520084" target="_blank" rel="noopener noreferrer"
+                    <span>🕐 {RESTAURANT_CONFIG.openingHours}</span>
+                    <a href={`https://wa.me/${RESTAURANT_CONFIG.whatsappNumber}`} target="_blank" rel="noopener noreferrer"
                         className="text-green-400 font-semibold hover:text-green-300 transition-colors">
                         💬 WhatsApp
                     </a>

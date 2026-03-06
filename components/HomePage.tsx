@@ -11,11 +11,13 @@ import type { MenuItem } from "@/lib/menu-data";
 export default function HomePage({
     banners,
     mustTryItems = [],
-    mustTryCatId
+    mustTryCatId,
+    heroVideoUrl
 }: {
     banners?: (string | null)[],
     mustTryItems?: MenuItem[],
-    mustTryCatId?: string
+    mustTryCatId?: string,
+    heroVideoUrl?: string
 }) {
     const router = useRouter();
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -165,7 +167,7 @@ export default function HomePage({
                     >
                         <video
                             ref={videoRef}
-                            src="/ub2.mp4"
+                            src={heroVideoUrl || "/ub2.mp4"}
                             autoPlay
                             loop
                             muted

@@ -25,6 +25,12 @@ export const banners = pgTable("banners", {
     image: text("image").notNull(),
 });
 
+export const storeSettings = pgTable("store_settings", {
+    key: text("key").primaryKey(),
+    value: text("value").notNull(),
+});
+
 export type Category = typeof categories.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type Banner = typeof banners.$inferSelect;
+export type StoreSetting = typeof storeSettings.$inferSelect;

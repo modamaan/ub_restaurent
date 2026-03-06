@@ -1,5 +1,5 @@
 import HomePage from "@/components/HomePage";
-import { getBanners, getMenu } from "@/lib/db/queries";
+import { getBanners, getMenu, getStoreSetting } from "@/lib/db/queries";
 
 export const metadata = {
   title: "UB Grills & Snacks | Kunnamkulam",
@@ -9,13 +9,14 @@ export const metadata = {
 export const revalidate = 0; // Ensure homepage fetches fresh banners & menu
 
 export default async function Home() {
-  const [banners, menu] = await Promise.all([
+  const [banners, menu, videoUrl] = await Promise.all([
     getBanners(),
-    getMenu()
+    getMenu(),
+    getStoreSetting("hero_video_url")
   ]);
 
   const mustTryCategory = menu.find(c => c.name.trim().toLowerCase() === "must try");
   const mustTryItems = mustTryCategory?.items.slice(0, 6) || [];
 
-  return <HomePage banners={banners} mustTryItems={mustTryItems} mustTryCatId={mustTryCategory?.id} />;
+  return <HomePage banners={banners} mustTryItems={mustTryItems} mustTryCatId={mustTryCategory?.id} heroVideoUrl={videoUrl || undefined} />;
 }

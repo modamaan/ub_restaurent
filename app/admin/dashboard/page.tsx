@@ -57,6 +57,11 @@ export default function AdminDashboard() {
     const [banners, setBanners] = useState<(string | null)[]>([null, null, null, null]);
     const [bannerUploadingMap, setBannerUploadingMap] = useState<Record<number, boolean>>({});
 
+    // ── Video State ──
+    const [videoMode, setVideoMode] = useState(false);
+    const [videoUrl, setVideoUrl] = useState<string>("");
+    const [videoUploading, setVideoUploading] = useState(false);
+
     useEffect(() => {
         if (typeof window !== "undefined" && sessionStorage.getItem("admin_auth") !== "true") {
             router.push("/admin"); return;
@@ -233,6 +238,54 @@ export default function AdminDashboard() {
         setSaving(false);
     }
 
+    // ── Banner Video ──────────────────────────────────────────────
+    async function openVideoModal() {
+        setVideoMode(true);
+        try {
+            const res = await fetch("/api/admin/settings?key=hero_video_url");
+            const data = await res.json();
+            if (data.value) setVideoUrl(data.value);
+        } catch {
+            console.error("Failed to fetch banner video url");
+        }
+    }
+
+    async function handleVideoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setVideoUploading(true);
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+            const json = await res.json();
+            if (!res.ok) throw new Error("Upload failed");
+            setVideoUrl(json.url);
+        } catch {
+            alert("Failed to upload video");
+        } finally {
+            setVideoUploading(false);
+            e.target.value = "";
+        }
+    }
+
+    async function saveVideoUrl() {
+        setSaving(true);
+        try {
+            await fetch("/api/admin/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key: "hero_video_url", value: videoUrl }),
+            });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2500);
+            setVideoMode(false);
+        } catch {
+            alert("Failed to save banner video");
+        }
+        setSaving(false);
+    }
+
     if (loading)
         return (
             <div className="min-h-screen flex items-center justify-center text-gray-400 text-lg">
@@ -271,6 +324,10 @@ export default function AdminDashboard() {
                         className="rounded-full bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                         🖼 Banner Image
                     </Button>
+                    <Button variant="outline" size="sm" onClick={openVideoModal}
+                        className="rounded-full bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
+                        🎥 Banner Video
+                    </Button>
                     <Button size="sm" onClick={() => setModalMode("add-category")}
                         className="rounded-full text-white" style={{ background: "#e8500a" }}>
                         + Add Category
@@ -300,6 +357,9 @@ export default function AdminDashboard() {
                         </Link>
                         <button onClick={() => { setIsNavOpen(false); openBannerModal(); }} className="px-4 py-3 text-sm text-gray-700 hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full">
                             🖼 Banner Image
+                        </button>
+                        <button onClick={() => { setIsNavOpen(false); openVideoModal(); }} className="px-4 py-3 text-sm text-gray-700 hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full">
+                            🎥 Banner Video
                         </button>
                         <button onClick={() => { setIsNavOpen(false); setModalMode("add-category"); }} className="px-4 py-3 text-sm hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full" style={{ color: "#e8500a" }}>
                             + Add Category
@@ -584,6 +644,61 @@ export default function AdminDashboard() {
                         </Button>
                         <Button onClick={saveBanners} className="text-white rounded-full bg-brand hover:bg-brand-dark" disabled={saving}>
                             {saving ? "Saving..." : "Save Banners"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Banner Video Modal */}
+            <Dialog open={videoMode} onOpenChange={setVideoMode}>
+                <DialogContent className="sm:max-w-md rounded-[20px] max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold">Manage Banner Video</DialogTitle>
+                        <p className="text-sm text-gray-500">Upload an MP4 video to show on the homepage.</p>
+                    </DialogHeader>
+
+                    <div className="mt-4">
+                        {videoUrl ? (
+                            <div className="relative aspect-video rounded-xl overflow-hidden bg-black border-2 border-gray-200">
+                                <video src={videoUrl} controls className="w-full h-full object-cover" />
+                                <button
+                                    onClick={() => setVideoUrl("")}
+                                    className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full z-10 hover:bg-red-600 transition-colors shadow-lg"
+                                    title="Remove video"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="relative aspect-video rounded-xl bg-gray-100 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4">
+                                {videoUploading ? (
+                                    <div className="font-bold text-sm text-brand flex flex-col items-center gap-2">
+                                        <span className="text-2xl animate-spin">⏳</span>
+                                        Uploading Video...
+                                    </div>
+                                ) : (
+                                    <>
+                                        <span className="text-4xl mb-2">🎥</span>
+                                        <span className="text-gray-600 font-medium">Click to upload video</span>
+                                        <span className="text-gray-400 text-xs mt-1">MP4, WEBM supported</span>
+                                    </>
+                                )}
+                                <input
+                                    type="file" accept="video/mp4,video/webm"
+                                    className="absolute inset-0 opacity-0 cursor-pointer z-0"
+                                    onChange={handleVideoUpload}
+                                    disabled={videoUploading}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter className="mt-6 flex-col sm:flex-row gap-2">
+                        <Button variant="outline" onClick={() => setVideoMode(false)} className="rounded-full">
+                            Cancel
+                        </Button>
+                        <Button onClick={saveVideoUrl} className="text-white rounded-full bg-brand hover:bg-brand-dark" disabled={saving || videoUploading}>
+                            {saving ? "Saving..." : "Save Video"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

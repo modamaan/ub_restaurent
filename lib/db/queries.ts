@@ -1,5 +1,5 @@
 import { db } from "./index";
-import { categories, items, banners } from "./schema";
+import { categories, items, banners, storeSettings } from "./schema";
 import { eq } from "drizzle-orm";
 import type { MenuCategory } from "../menu-data";
 
@@ -82,4 +82,22 @@ export async function deleteItem(id: string) {
 // ── Delete a category (items cascade) ────────────────────
 export async function deleteCategory(id: string) {
     await db.delete(categories).where(eq(categories.id, id));
+}
+
+// ── Store Settings ───────────────────────────────────────
+export async function getStoreSetting(key: string): Promise<string | null> {
+    const [setting] = await db
+        .select()
+        .from(storeSettings)
+        .where(eq(storeSettings.key, key));
+    return setting?.value ?? null;
+}
+
+export async function setStoreSetting(key: string, value: string): Promise<void> {
+    const existing = await getStoreSetting(key);
+    if (existing !== null) {
+        await db.update(storeSettings).set({ value }).where(eq(storeSettings.key, key));
+    } else {
+        await db.insert(storeSettings).values({ key, value });
+    }
 }
