@@ -17,5 +17,5 @@ export default async function Home() {
   const mustTryCategory = menu.find(c => c.name.trim().toLowerCase() === "must try");
   const mustTryItems = mustTryCategory?.items.slice(0, 6) || [];
 
-  return <HomePage banners={banners} mustTryItems={mustTryItems} />;
+  return <HomePage banners={banners} mustTryItems={mustTryItems} mustTryCatId={mustTryCategory?.id} />;
 }

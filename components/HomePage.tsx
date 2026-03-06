@@ -10,10 +10,12 @@ import type { MenuItem } from "@/lib/menu-data";
 
 export default function HomePage({
     banners,
-    mustTryItems = []
+    mustTryItems = [],
+    mustTryCatId
 }: {
     banners?: (string | null)[],
-    mustTryItems?: MenuItem[]
+    mustTryItems?: MenuItem[],
+    mustTryCatId?: string
 }) {
     const router = useRouter();
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -116,7 +118,7 @@ export default function HomePage({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {mustTryItems.map((item) => (
                             <div key={item.id}
-                                onClick={() => router.push("/menu")}
+                                onClick={() => router.push(mustTryCatId ? `/menu?cat=${mustTryCatId}` : "/menu")}
                                 className="flex items-center gap-4 py-4 px-4 border border-gray-100 rounded-2xl bg-white shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all">
                                 {/* Image */}
                                 <div className="relative w-[80px] h-[80px] rounded-xl overflow-hidden shrink-0 bg-orange-50">

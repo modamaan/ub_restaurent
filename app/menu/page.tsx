@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getMenu } from "@/lib/db/queries";
 import { RESTAURANT_CONFIG } from "@/lib/config";
 import MenuPageClient from "@/app/MenuPageClient";
@@ -11,5 +12,9 @@ export const metadata = {
 
 export default async function MenuPage() {
     const menu = await getMenu();
-    return <MenuPageClient menu={menu} config={RESTAURANT_CONFIG} />;
+    return (
+        <Suspense>
+            <MenuPageClient menu={menu} config={RESTAURANT_CONFIG} />
+        </Suspense>
+    );
 }

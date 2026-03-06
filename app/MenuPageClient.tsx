@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { MenuCategory } from "@/lib/menu-data";
 import { RESTAURANT_CONFIG } from "@/lib/config";
 import CategoryTabs from "@/components/CategoryTabs";
@@ -11,8 +12,15 @@ import Navbar from "@/components/Navbar";
 type VegFilter = "all" | "veg" | "nonveg";
 
 export default function MenuPageClient({ menu, config }: { menu: MenuCategory[]; config: typeof RESTAURANT_CONFIG }) {
-    const [selectedCat, setSelectedCat] = useState("all");
+    const searchParams = useSearchParams();
+    const [selectedCat, setSelectedCat] = useState(() => searchParams.get("cat") ?? "all");
     const [vegFilter, setVegFilter] = useState<VegFilter>("all");
+
+    // Sync if the query param changes (e.g. browser back/forward)
+    useEffect(() => {
+        const cat = searchParams.get("cat");
+        if (cat) setSelectedCat(cat);
+    }, [searchParams]);
 
     const visible = useMemo(() => {
         const cats = selectedCat === "all" ? menu : menu.filter((c) => c.id === selectedCat);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { RESTAURANT_CONFIG } from "@/lib/config";
 
@@ -18,9 +18,9 @@ function LiveTime() {
     return <span>{time}</span>;
 }
 
-
 export default function Navbar() {
     const router = useRouter();
+    const pathname = usePathname();
     const [menuOpen, setMenuOpen] = useState(false);
 
     return (
@@ -99,12 +99,14 @@ export default function Navbar() {
 
                 {/* Order Now + mobile menu toggle */}
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => router.push("/menu")}
-                        className="text-white text-sm font-bold px-5 py-2 rounded-full transition-all hover:opacity-90 active:scale-95"
-                        style={{ background: "#e8500a" }}>
-                        Order Now
-                    </button>
+                    {pathname !== "/menu" && (
+                        <button
+                            onClick={() => router.push("/menu")}
+                            className="text-white text-sm font-bold px-5 py-2 rounded-full transition-all hover:opacity-90 active:scale-95"
+                            style={{ background: "#e8500a" }}>
+                            Order Now
+                        </button>
+                    )}
                     {/* Mobile hamburger */}
                     <button className="md:hidden p-1" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
                         <svg className="w-5 h-5 text-[#fecba8]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
