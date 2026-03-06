@@ -26,6 +26,20 @@ import {
 } from "@/components/ui/select";
 
 type ModalMode = "add-item" | "edit-item" | "add-category" | null;
+type ActiveTab = "orders" | "menu";
+
+type OrderItemRow = { id: string; itemName: string; quantity: number; price: number };
+type OrderWithItems = {
+    id: string;
+    customerName: string;
+    phone: string;
+    orderType: string;
+    address: string;
+    totalPrice: number;
+    status: string;
+    createdAt: string;
+    items: OrderItemRow[];
+};
 
 const EMPTY_ITEM: Omit<MenuItem, "id"> = {
     name: "",
@@ -62,6 +76,56 @@ export default function AdminDashboard() {
     const [videoUrl, setVideoUrl] = useState<string>("");
     const [videoUploading, setVideoUploading] = useState(false);
 
+    // ── Orders State ──
+    const [activeTab, setActiveTab] = useState<ActiveTab>("orders");
+    const [orders, setOrders] = useState<OrderWithItems[]>([]);
+    const [ordersLoading, setOrdersLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const prevOrderIds = useRef<Set<string>>(new Set());
+    const [sseStatus, setSseStatus] = useState<"connecting" | "live" | "error">("connecting");
+
+    function playRingSound() {
+        try {
+            const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            const times = [0, 0.35, 0.7];
+            times.forEach((t) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(880, ctx.currentTime + t);
+                gain.gain.setValueAtTime(0.6, ctx.currentTime + t);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.3);
+                osc.start(ctx.currentTime + t);
+                osc.stop(ctx.currentTime + t + 0.3);
+            });
+        } catch { /* ignore */ }
+    }
+
+    async function fetchOrders() {
+        setRefreshing(true);
+        try {
+            const res = await fetch("/api/orders");
+            const data: OrderWithItems[] = await res.json();
+            setOrders(data);
+            prevOrderIds.current = new Set(data.map(o => o.id));
+        } catch { /* ignore */ } finally {
+            setOrdersLoading(false);
+            setTimeout(() => setRefreshing(false), 600);
+        }
+    }
+
+    async function toggleOrderStatus(order: OrderWithItems) {
+        const newStatus = order.status === "done" ? "pending" : "done";
+        await fetch(`/api/orders/${order.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+        });
+        setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: newStatus } : o));
+    }
+
     useEffect(() => {
         if (typeof window !== "undefined" && sessionStorage.getItem("admin_auth") !== "true") {
             router.push("/admin"); return;
@@ -70,7 +134,31 @@ export default function AdminDashboard() {
             .then((r) => r.json())
             .then((d) => { setMenu(d); setLoading(false); })
             .catch(() => setLoading(false));
-    }, [router]);
+
+        // ── SSE: real-time order stream ──
+        const es = new EventSource("/api/orders/stream");
+
+        es.addEventListener("snapshot", (e) => {
+            const data: OrderWithItems[] = JSON.parse(e.data);
+            setOrders(data);
+            setOrdersLoading(false);
+            setSseStatus("live");
+            prevOrderIds.current = new Set(data.map(o => o.id));
+        });
+
+        es.addEventListener("new_orders", (e) => {
+            const newOnes: OrderWithItems[] = JSON.parse(e.data);
+            if (newOnes.length > 0) playRingSound();
+        });
+
+        es.onerror = () => {
+            setSseStatus("error");
+            // EventSource auto-reconnects; mark loading false so UI stays usable
+            setOrdersLoading(false);
+        };
+
+        return () => es.close();
+    }, [router]); // eslint-disable-line react-hooks/exhaustive-deps
 
     async function persist(updated: MenuCategory[]) {
         setSaving(true);
@@ -320,6 +408,16 @@ export default function AdminDashboard() {
                         className="rounded-full bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                         <Link href="/" target="_blank">👁 Preview Menu</Link>
                     </Button>
+                    <Button variant="outline" size="sm"
+                        onClick={() => setActiveTab("orders")}
+                        className={`rounded-full border-white/20 text-white hover:bg-white/20 hover:text-white relative ${activeTab === "orders" ? "bg-white/20" : "bg-white/10"}`}>
+                        📦 Orders
+                        {orders.filter(o => o.status === "pending").length > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                                {orders.filter(o => o.status === "pending").length}
+                            </span>
+                        )}
+                    </Button>
                     <Button variant="outline" size="sm" onClick={openBannerModal}
                         className="rounded-full bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                         🖼 Banner Image
@@ -328,7 +426,7 @@ export default function AdminDashboard() {
                         className="rounded-full bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                         🎥 Banner Video
                     </Button>
-                    <Button size="sm" onClick={() => setModalMode("add-category")}
+                    <Button size="sm" onClick={() => { setActiveTab("menu"); setModalMode("add-category"); }}
                         className="rounded-full text-white" style={{ background: "#e8500a" }}>
                         + Add Category
                     </Button>
@@ -355,13 +453,21 @@ export default function AdminDashboard() {
                         <Link href="/" target="_blank" className="px-4 py-3 text-sm text-gray-700 hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2">
                             👁 Preview Menu
                         </Link>
+                        <button onClick={() => { setIsNavOpen(false); setActiveTab("orders"); }} className="px-4 py-3 text-sm text-gray-700 hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center justify-between gap-2 text-left w-full">
+                            <span>📦 Orders</span>
+                            {orders.filter(o => o.status === "pending").length > 0 && (
+                                <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                                    {orders.filter(o => o.status === "pending").length}
+                                </span>
+                            )}
+                        </button>
                         <button onClick={() => { setIsNavOpen(false); openBannerModal(); }} className="px-4 py-3 text-sm text-gray-700 hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full">
                             🖼 Banner Image
                         </button>
                         <button onClick={() => { setIsNavOpen(false); openVideoModal(); }} className="px-4 py-3 text-sm text-gray-700 hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full">
                             🎥 Banner Video
                         </button>
-                        <button onClick={() => { setIsNavOpen(false); setModalMode("add-category"); }} className="px-4 py-3 text-sm hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full" style={{ color: "#e8500a" }}>
+                        <button onClick={() => { setIsNavOpen(false); setActiveTab("menu"); setModalMode("add-category"); }} className="px-4 py-3 text-sm hover:bg-orange-50 font-medium border-b border-gray-50 flex items-center gap-2 text-left w-full" style={{ color: "#e8500a" }}>
                             + Add Category
                         </button>
                         <button onClick={() => { sessionStorage.removeItem("admin_auth"); router.push("/admin"); }} className="px-4 py-3 text-sm text-red-600 hover:bg-red-50 font-medium flex items-center gap-2 text-left w-full">
@@ -373,95 +479,240 @@ export default function AdminDashboard() {
 
             {/* Content */}
             <div className="max-w-4xl mx-auto px-4 py-6">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-gray-800">📋 Menu Items</h2>
-                    {saving && <span className="text-sm text-gray-400">Saving…</span>}
+
+                {/* Tab Switch */}
+                <div className="flex gap-2 mb-6">
+                    <button
+                        onClick={() => setActiveTab("orders")}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all relative ${activeTab === "orders"
+                            ? "bg-brand text-white shadow-md"
+                            : "bg-white text-gray-500 border border-gray-200 hover:border-brand/50"
+                            }`}>
+                        📦 Orders
+                        {orders.filter(o => o.status === "pending").length > 0 && (
+                            <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                                {orders.filter(o => o.status === "pending").length}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("menu")}
+                        className={`px-5 py-2.5 rounded-full text-sm font-bold transition-all ${activeTab === "menu"
+                            ? "bg-brand text-white shadow-md"
+                            : "bg-white text-gray-500 border border-gray-200 hover:border-brand/50"
+                            }`}>
+                        📋 Menu Items
+                    </button>
                 </div>
 
-                {menu.length === 0 && (
-                    <div className="text-center py-16 text-gray-400">
-                        <p className="text-4xl mb-3">📂</p>
-                        <p>No categories yet. Click <strong>+ Add Category</strong> to start.</p>
+                {/* ── ORDERS TAB ── */}
+                {activeTab === "orders" && (
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-lg font-bold text-gray-800">📦 Orders</h2>
+                                <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${sseStatus === "live" ? "bg-green-100 text-green-600" :
+                                    sseStatus === "error" ? "bg-red-100 text-red-500" :
+                                        "bg-gray-100 text-gray-400"
+                                    }`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${sseStatus === "live" ? "bg-green-500 animate-pulse" :
+                                        sseStatus === "error" ? "bg-red-500" :
+                                            "bg-gray-400 animate-pulse"
+                                        }`} />
+                                    {sseStatus === "live" ? "Live" : sseStatus === "error" ? "Reconnecting…" : "Connecting…"}
+                                </span>
+                            </div>
+                            <button
+                                onClick={fetchOrders}
+                                disabled={refreshing}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 border border-gray-200 bg-white hover:border-brand hover:text-brand hover:bg-orange-50 px-3 py-1.5 rounded-full transition-all shadow-sm active:scale-95 disabled:opacity-60"
+                            >
+                                <svg
+                                    className={`w-3.5 h-3.5 transition-transform ${refreshing ? "animate-spin" : ""}`}
+                                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                                    <path d="M21 3v5h-5" />
+                                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                                    <path d="M8 16H3v5" />
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+
+                        {ordersLoading ? (
+                            <p className="text-center text-gray-400 py-12">Loading orders…</p>
+                        ) : orders.length === 0 ? (
+                            <div className="text-center py-16 text-gray-400">
+                                <p className="text-5xl mb-3">📭</p>
+                                <p className="font-medium">No orders yet. They will appear here automatically.</p>
+                                <p className="text-xs mt-1 text-gray-300">Listening for orders in real-time via SSE</p>
+                            </div>
+                        ) : (
+                            orders.map((order) => {
+                                const isDone = order.status === "done";
+                                const date = new Date(order.createdAt);
+                                const dateStr = date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+                                const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+                                return (
+                                    <div key={order.id}
+                                        className={`rounded-2xl border shadow-sm overflow-hidden transition-all ${isDone ? "bg-gray-50 border-gray-100 opacity-70" : "bg-white border-orange-100"
+                                            }`}>
+                                        {/* Order header */}
+                                        <div className={`flex items-center justify-between px-5 py-3 ${isDone ? "bg-gray-100" : "bg-orange-50"
+                                            }`}>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${order.orderType === "delivery"
+                                                    ? "bg-blue-100 text-blue-600"
+                                                    : "bg-green-100 text-green-600"
+                                                    }`}>
+                                                    {order.orderType === "delivery" ? "🛵 Delivery" : "🏃 Pickup"}
+                                                </span>
+                                                {isDone && <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full font-semibold">✅ Done</span>}
+                                                {!isDone && <span className="inline-flex items-center gap-1 text-xs bg-yellow-100 text-yellow-600 px-2 py-0.5 rounded-full font-semibold animate-pulse">🔔 Pending</span>}
+                                            </div>
+                                            <span className="text-[11px] text-gray-400">{dateStr} · {timeStr}</span>
+                                        </div>
+
+                                        {/* Customer info */}
+                                        <div className="px-5 pt-4 pb-2 flex flex-col gap-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-base font-bold text-gray-900">{order.customerName}</span>
+                                                <a href={`tel:${order.phone}`}
+                                                    className="text-xs text-brand font-semibold bg-orange-50 px-2 py-0.5 rounded-full hover:bg-orange-100 transition-colors">
+                                                    📞 {order.phone}
+                                                </a>
+                                            </div>
+                                            {order.address && (
+                                                <p className="text-xs text-gray-500">📍 {order.address}</p>
+                                            )}
+                                        </div>
+
+                                        {/* Items list */}
+                                        <div className="px-5 py-2">
+                                            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Items</p>
+                                            <div className="flex flex-col gap-1">
+                                                {order.items.map((it) => (
+                                                    <div key={it.id} className="flex justify-between text-sm">
+                                                        <span className="text-gray-700">{it.itemName} <span className="text-gray-400">× {it.quantity}</span></span>
+                                                        <span className="font-semibold text-gray-800">₹{it.price * it.quantity}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Footer */}
+                                        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3">
+                                            <span className="font-extrabold text-gray-900 text-base">Total: ₹{order.totalPrice}</span>
+                                            <button
+                                                onClick={() => toggleOrderStatus(order)}
+                                                className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${isDone
+                                                    ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+                                                    : "bg-green-500 text-white hover:bg-green-600 shadow-sm"
+                                                    }`}>
+                                                {isDone ? "↩ Unmark" : "✓ Mark as Done"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
                 )}
 
-                <div className="flex flex-col gap-4">
-                    {menu.map((cat) => (
-                        <div key={cat.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                            {/* Category header */}
-                            <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border-b border-gray-100">
-                                <span className="font-bold text-gray-800">{cat.name}</span>
-                                <div className="flex gap-2">
-                                    <Button size="sm" onClick={() => openAdd(cat.id)}
-                                        className="text-white rounded-lg" style={{ background: "#e8500a" }}>
-                                        + Add Item
-                                    </Button>
-                                    <Button size="sm" variant="outline"
-                                        className="rounded-lg text-red-500 border-red-200 bg-red-50 hover:bg-red-100 hover:text-red-600"
-                                        onClick={() => delCat(cat.id)}>
-                                        Delete
-                                    </Button>
-                                </div>
+                {/* ── MENU TAB ── */}
+                {activeTab === "menu" && (
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-bold text-gray-800">📋 Menu Items</h2>
+                            {saving && <span className="text-sm text-gray-400">Saving…</span>}
+                        </div>
+
+                        {menu.length === 0 && (
+                            <div className="text-center py-16 text-gray-400">
+                                <p className="text-4xl mb-3">📂</p>
+                                <p>No categories yet. Click <strong>+ Add Category</strong> to start.</p>
                             </div>
+                        )}
 
-                            {cat.items.length === 0 && (
-                                <p className="px-5 py-4 text-sm text-gray-400">No items yet.</p>
-                            )}
-
-                            {cat.items.map((item) => (
-                                <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
-                                    {/* Image + Info */}
-                                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                                        <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-orange-50 flex items-center justify-center relative">
-                                            {item.image
-                                                ? <Image src={item.image} alt={item.name} fill style={{ objectFit: "cover" }} />
-                                                : <span className="text-2xl">🍽️</span>}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
-                                                <span className={`veg-indicator ${item.isVeg ? "veg" : "nonveg"}`} />
-                                                {item.name}
-                                            </p>
-                                            <p className="font-bold text-sm" style={{ color: "#e8500a" }}>₹{item.price}</p>
-                                            <p className="text-gray-400 text-xs truncate">{item.description}</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:flex-col sm:items-end shrink-0">
-                                        <Select
-                                            value={item.available ? "available" : "not-available"}
-                                            onValueChange={(v) => setAvail(cat.id, item.id, v === "available")}
-                                        >
-                                            <SelectTrigger className={`h-7 text-xs font-semibold w-36 rounded-lg border ${item.available
-                                                ? "text-green-600 border-green-200 bg-green-50"
-                                                : "text-red-500 border-red-200 bg-red-50"
-                                                }`}>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="available">✅ Available</SelectItem>
-                                                <SelectItem value="not-available">❌ Not Available</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <div className="flex gap-1.5">
-                                            <Button size="sm" variant="secondary"
-                                                className="text-xs rounded-lg h-7 px-3"
-                                                onClick={() => openEdit(cat.id, item)}>
-                                                Edit
+                        <div className="flex flex-col gap-4">
+                            {menu.map((cat) => (
+                                <div key={cat.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                    {/* Category header */}
+                                    <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border-b border-gray-100">
+                                        <span className="font-bold text-gray-800">{cat.name}</span>
+                                        <div className="flex gap-2">
+                                            <Button size="sm" onClick={() => openAdd(cat.id)}
+                                                className="text-white rounded-lg" style={{ background: "#e8500a" }}>
+                                                + Add Item
                                             </Button>
                                             <Button size="sm" variant="outline"
-                                                className="text-xs rounded-lg h-7 px-3 text-red-500 border-red-200 bg-red-50 hover:bg-red-100 hover:text-red-600"
-                                                onClick={() => delItem(cat.id, item.id)}>
+                                                className="rounded-lg text-red-500 border-red-200 bg-red-50 hover:bg-red-100 hover:text-red-600"
+                                                onClick={() => delCat(cat.id)}>
                                                 Delete
                                             </Button>
                                         </div>
                                     </div>
+
+                                    {cat.items.length === 0 && (
+                                        <p className="px-5 py-4 text-sm text-gray-400">No items yet.</p>
+                                    )}
+
+                                    {cat.items.map((item) => (
+                                        <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
+                                            {/* Image + Info */}
+                                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-orange-50 flex items-center justify-center relative">
+                                                    {item.image
+                                                        ? <Image src={item.image} alt={item.name} fill style={{ objectFit: "cover" }} />
+                                                        : <span className="text-2xl">🍽️</span>}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
+                                                        <span className={`veg-indicator ${item.isVeg ? "veg" : "nonveg"}`} />
+                                                        {item.name}
+                                                    </p>
+                                                    <p className="font-bold text-sm" style={{ color: "#e8500a" }}>₹{item.price}</p>
+                                                    <p className="text-gray-400 text-xs truncate">{item.description}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:flex-col sm:items-end shrink-0">
+                                                <Select
+                                                    value={item.available ? "available" : "not-available"}
+                                                    onValueChange={(v) => setAvail(cat.id, item.id, v === "available")}
+                                                >
+                                                    <SelectTrigger className={`h-7 text-xs font-semibold w-36 rounded-lg border ${item.available
+                                                        ? "text-green-600 border-green-200 bg-green-50"
+                                                        : "text-red-500 border-red-200 bg-red-50"
+                                                        }`}>
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="available">✅ Available</SelectItem>
+                                                        <SelectItem value="not-available">❌ Not Available</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <div className="flex gap-1.5">
+                                                    <Button size="sm" variant="secondary"
+                                                        className="text-xs rounded-lg h-7 px-3"
+                                                        onClick={() => openEdit(cat.id, item)}>
+                                                        Edit
+                                                    </Button>
+                                                    <Button size="sm" variant="outline"
+                                                        className="text-xs rounded-lg h-7 px-3 text-red-500 border-red-200 bg-red-50 hover:bg-red-100 hover:text-red-600"
+                                                        onClick={() => delItem(cat.id, item.id)}>
+                                                        Delete
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             ))}
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* ── Add / Edit Item Dialog ── */}

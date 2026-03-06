@@ -1,6 +1,6 @@
 import { db } from "./index";
-import { categories, items, banners, storeSettings } from "./schema";
-import { eq } from "drizzle-orm";
+import { categories, items, banners, storeSettings, orders, orderItems } from "./schema";
+import { eq, desc } from "drizzle-orm";
 import type { MenuCategory } from "../menu-data";
 
 // ── Read entire menu from DB ───────────────────────────────
@@ -100,4 +100,52 @@ export async function setStoreSetting(key: string, value: string): Promise<void>
     } else {
         await db.insert(storeSettings).values({ key, value });
     }
+}
+
+// ── Orders ───────────────────────────────────────────────
+
+type CreateOrderInput = {
+    id: string;
+    customerName: string;
+    phone: string;
+    orderType: string;
+    address: string;
+    totalPrice: number;
+    items: { id: string; itemName: string; quantity: number; price: number }[];
+};
+
+export async function createOrder(data: CreateOrderInput): Promise<void> {
+    await db.insert(orders).values({
+        id: data.id,
+        customerName: data.customerName,
+        phone: data.phone,
+        orderType: data.orderType,
+        address: data.address,
+        totalPrice: data.totalPrice,
+        status: "pending",
+    });
+    if (data.items.length > 0) {
+        await db.insert(orderItems).values(
+            data.items.map((it) => ({
+                id: it.id,
+                orderId: data.id,
+                itemName: it.itemName,
+                quantity: it.quantity,
+                price: it.price,
+            }))
+        );
+    }
+}
+
+export async function getOrders() {
+    const allOrders = await db.select().from(orders).orderBy(desc(orders.createdAt));
+    const allItems = await db.select().from(orderItems);
+    return allOrders.map((o) => ({
+        ...o,
+        items: allItems.filter((it) => it.orderId === o.id),
+    }));
+}
+
+export async function updateOrderStatus(id: string, status: "pending" | "done"): Promise<void> {
+    await db.update(orders).set({ status }).where(eq(orders.id, id));
 }

@@ -3,6 +3,15 @@
 import { useCart } from "@/lib/cart-context";
 import { RESTAURANT_CONFIG } from "@/lib/config";
 import { useState } from "react";
+import { z } from "zod";
+
+const phoneSchema = z
+    .string()
+    .trim()
+    .regex(
+        /^(?:\+91|91|0)?[6-9]\d{9}$/,
+        "Enter a valid 10-digit mobile number (e.g. 9876543210)"
+    );
 
 type OrderType = "pickup" | "delivery";
 
@@ -13,9 +22,9 @@ export default function CartDrawer() {
     const [orderType, setOrderType] = useState<OrderType>("pickup");
     const [phone, setPhone] = useState("");
     const [address, setAddress] = useState("");
-    const [nameError, setNameError] = useState(false);
-    const [phoneError, setPhoneError] = useState(false);
-    const [addressError, setAddressError] = useState(false);
+    const [nameError, setNameError] = useState("");
+    const [phoneError, setPhoneError] = useState("");
+    const [addressError, setAddressError] = useState("");
 
     function buildWhatsAppMessage() {
         const lines = [
@@ -39,17 +48,57 @@ export default function CartDrawer() {
         return encodeURIComponent(lines.join("\n"));
     }
 
-    function handleWhatsApp() {
+    const [ordering, setOrdering] = useState(false);
+
+    async function handleWhatsApp() {
         let valid = true;
-        if (!customerName.trim()) { setNameError(true); valid = false; } else setNameError(false);
-        if (!phone.trim()) { setPhoneError(true); valid = false; } else setPhoneError(false);
-        if (orderType === "delivery") {
-            if (!address.trim()) { setAddressError(true); valid = false; } else setAddressError(false);
+        if (!customerName.trim()) { setNameError("Name is required."); valid = false; } else setNameError("");
+
+        const phoneResult = phoneSchema.safeParse(phone);
+        if (!phoneResult.success) {
+            setPhoneError(phoneResult.error.issues[0].message);
+            valid = false;
         } else {
-            setAddressError(false);
+            setPhoneError("");
+        }
+
+        if (orderType === "delivery") {
+            if (!address.trim()) { setAddressError("Delivery address is required."); valid = false; } else setAddressError("");
+        } else {
+            setAddressError("");
         }
         if (!valid) return;
+
+        setOrdering(true);
+        try {
+            // Save order to DB
+            await fetch("/api/orders", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    customerName,
+                    phone,
+                    orderType,
+                    address: orderType === "delivery" ? address : "",
+                    totalPrice,
+                    items: items.map((ci) => ({
+                        name: ci.item.name,
+                        quantity: ci.quantity,
+                        price: ci.item.price,
+                    })),
+                }),
+            });
+        } catch {
+            // Non-blocking: still open WhatsApp even if DB save fails
+        }
+
+        // Open WhatsApp
         window.open(`https://wa.me/${RESTAURANT_CONFIG.whatsappNumber}?text=${buildWhatsAppMessage()}`, "_blank");
+
+        // Clear cart and close drawer
+        clear();
+        setOpen(false);
+        setOrdering(false);
     }
 
     if (totalItems === 0 && !open) return null;
@@ -116,9 +165,9 @@ export default function CartDrawer() {
                                             Your Name <span className="text-red-500">*</span>
                                         </label>
                                         <input type="text" placeholder="Enter your name..."
-                                            value={customerName} onChange={(e) => { setCustomerName(e.target.value); setNameError(false); }}
+                                            value={customerName} onChange={(e) => { setCustomerName(e.target.value); setNameError(""); }}
                                             className={`w-full border rounded-xl px-4 py-2.5 text-sm font-[Outfit] outline-none transition-colors ${nameError ? "border-red-400 bg-red-50" : "border-gray-200 focus:border-brand"}`} />
-                                        {nameError && <p className="text-red-500 text-xs mt-1">Name is required.</p>}
+                                        {nameError && <p className="text-red-500 text-xs mt-1">{nameError}</p>}
                                     </div>
 
                                     {/* Phone input – always visible */}
@@ -127,9 +176,9 @@ export default function CartDrawer() {
                                             Phone Number <span className="text-red-500">*</span>
                                         </label>
                                         <input type="tel" placeholder="e.g. 9876543210"
-                                            value={phone} onChange={(e) => { setPhone(e.target.value); setPhoneError(false); }}
+                                            value={phone} onChange={(e) => { setPhone(e.target.value); setPhoneError(""); }}
                                             className={`w-full border rounded-xl px-4 py-2.5 text-sm font-[Outfit] outline-none transition-colors ${phoneError ? "border-red-400 bg-red-50" : "border-gray-200 focus:border-brand"}`} />
-                                        {phoneError && <p className="text-red-500 text-xs mt-1">Phone number is required.</p>}
+                                        {phoneError && <p className="text-red-500 text-xs mt-1">{phoneError}</p>}
                                     </div>
 
                                     {/* Order type toggle */}
@@ -153,10 +202,10 @@ export default function CartDrawer() {
                                                 Delivery Address <span className="text-red-500">*</span>
                                             </label>
                                             <textarea placeholder="Enter your full delivery address..."
-                                                value={address} onChange={(e) => { setAddress(e.target.value); setAddressError(false); }}
+                                                value={address} onChange={(e) => { setAddress(e.target.value); setAddressError(""); }}
                                                 rows={3}
                                                 className={`w-full border rounded-xl px-4 py-2.5 text-sm font-[Outfit] outline-none transition-colors resize-none ${addressError ? "border-red-400 bg-red-50" : "border-gray-200 focus:border-brand"}`} />
-                                            {addressError && <p className="text-red-500 text-xs mt-1">Delivery address is required.</p>}
+                                            {addressError && <p className="text-red-500 text-xs mt-1">{addressError}</p>}
                                         </div>
                                     )}
                                 </>
@@ -169,13 +218,17 @@ export default function CartDrawer() {
                                 <div className="flex justify-between text-lg font-extrabold text-gray-900 mb-1">
                                     <span>Total</span><span>₹{totalPrice}</span>
                                 </div>
-                                <button onClick={handleWhatsApp}
+                                <button onClick={handleWhatsApp} disabled={ordering}
                                     className="bg-whatsapp text-white py-4 rounded-2xl text-[17px] font-bold flex items-center justify-center gap-2.5
-                    hover:brightness-110 hover:-translate-y-0.5 transition-all shadow-[0_4px_20px_rgba(37,211,102,0.35)]">
-                                    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-                                    </svg>
-                                    Order on WhatsApp
+                    hover:brightness-110 hover:-translate-y-0.5 transition-all shadow-[0_4px_20px_rgba(37,211,102,0.35)] disabled:opacity-70 disabled:cursor-not-allowed">
+                                    {ordering ? (
+                                        <span className="animate-spin text-xl">⏳</span>
+                                    ) : (
+                                        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                                        </svg>
+                                    )}
+                                    {ordering ? "Placing Order…" : "Order on WhatsApp"}
                                 </button>
                                 <button onClick={() => { clear(); setOpen(false); }}
                                     className="border border-gray-200 text-gray-400 py-2.5 rounded-xl text-sm font-medium hover:border-red-400 hover:text-red-500 transition-all">

@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 
 export const categories = pgTable("categories", {
     id: text("id").primaryKey(),
@@ -30,7 +30,30 @@ export const storeSettings = pgTable("store_settings", {
     value: text("value").notNull(),
 });
 
+export const orders = pgTable("orders", {
+    id: text("id").primaryKey(),
+    customerName: text("customer_name").notNull(),
+    phone: text("phone").notNull(),
+    orderType: text("order_type").notNull(), // "pickup" | "delivery"
+    address: text("address").notNull().default(""),
+    totalPrice: integer("total_price").notNull().default(0),
+    status: text("status").notNull().default("pending"), // "pending" | "done"
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const orderItems = pgTable("order_items", {
+    id: text("id").primaryKey(),
+    orderId: text("order_id")
+        .notNull()
+        .references(() => orders.id, { onDelete: "cascade" }),
+    itemName: text("item_name").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    price: integer("price").notNull().default(0),
+});
+
 export type Category = typeof categories.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type Banner = typeof banners.$inferSelect;
 export type StoreSetting = typeof storeSettings.$inferSelect;
+export type Order = typeof orders.$inferSelect;
+export type OrderItem = typeof orderItems.$inferSelect;
