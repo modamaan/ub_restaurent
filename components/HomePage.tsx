@@ -197,6 +197,29 @@ export default function HomePage({
                 </div>
             </section>
 
+            {/* ── Location Section ── */}
+            <section className="bg-white py-16">
+                <div className="max-w-4xl mx-auto px-4 text-center">
+                    <span className="text-xs font-bold tracking-widest uppercase mb-2 block" style={{ color: "#e8500a" }}>
+                        Visit Us
+                    </span>
+                    <h2 className="text-3xl font-extrabold mb-8 text-gray-900">Our Location</h2>
+
+                    <div className="rounded-3xl overflow-hidden shadow-2xl border border-gray-100 bg-gray-50 h-[400px] w-full">
+                        <iframe
+                            src={RESTAURANT_CONFIG.googleMapsEmbedUrl}
+                            width="100%"
+                            height="100%"
+                            style={{ border: 0 }}
+                            allowFullScreen={false}
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                            title="Restaurant Location"
+                        ></iframe>
+                    </div>
+                </div>
+            </section>
+
             {/* ── Contact strip ── */}
             <section className="py-12 px-4 text-white text-center"
                 style={{ background: "linear-gradient(135deg, #1a0a00, #3d1200)" }}>
@@ -213,7 +236,7 @@ export default function HomePage({
                     <a href={`https://wa.me/${RESTAURANT_CONFIG.whatsappNumber}`} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 font-semibold px-8 py-3 rounded-full no-underline text-white transition-all hover:opacity-90"
                         style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)" }}>
-                        📞 +91 70255 20084
+                        📞 {RESTAURANT_CONFIG.whatsappNumber}
                     </a>
                 </div>
             </section>
